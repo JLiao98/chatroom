@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Chat Room</title>
+    <link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div class="all">
+
+    <div class="CHAT">
+
+        <div class="person">
+            <text id="onLine">Number of Users:</text>
+        </div>
+        <div class="contain">
+            <div class="content" id="content"></div>
+        </div>
+        <div class="footer">
+            <!-- <input placeholder="设置用户名." name="userName" id="userName"/> -->
+            <text id="userName">Your username</text>
+            <!-- <button id="setName">Set</button> -->
+            <textarea placeholder="Type here..." id="message" name="message"></textarea>
+            <button id="sendMessage">Send</button>
+        </div>
+
+    </div>
+
+    <div class="USER">
+        <div class="title">
+            <text>Online Users:</text>
+        </div>
+        <div class="userList" id="userList"></div>
+    </div>
+
+</div>
+
+
+<script type="text/javascript" language="JavaScript">
+
+    let ws = null;
+    let usern = '';
+    let clr = '';
+
+
+    Date.prototype.Format = function (fmt) {
+        //author: xjj
+        var o = {
+            "M+": this.getMonth() + 1,
+            "d+": this.getDate(),
+            "h+": this.getHours(),
+            "m+": this.getMinutes(),
+            "s+": this.getSeconds(),
+            "q+": Math.floor((this.getMonth() + 3) / 3),
+            "S": this.getMilliseconds()
+        };
+        if (/(y+)/.test(fmt)) fmt = fmt.replace(RegExp.$1, (this.getFullYear() + "").substr(4 - RegExp.$1.length));
+        for (var k in o)
+            if (new RegExp("(" + k + ")").test(fmt)) fmt = fmt.replace(RegExp.$1, (RegExp.$1.length == 1) ? (o[k]) : (("00" + o[k]).substr(("" + o[k]).length)));
+        return fmt;
+    };
+
+    function getUserNameColor(userName) {
+        const COLORS = [
+            '#e21400', '#91580f', '#f8a700', '#f78b00',
+            '#58dc00', '#287b00', '#a8f07a', '#4ae8c4',
+            '#3b88eb', '#3824aa', '#a700ff', '#d300e7'
+        ];
+        // Compute hash code
+        let hash = 7;
+        for (let i = 0; i < userName.length; i++) {
+            hash = userName.charCodeAt(i) + (hash << 5) - hash;
+        }
+        // Calculate color
+        const index = Math.abs(hash % COLORS.length);
+        return COLORS[index];
+    }
+
+    const createChatDiv = (data) => {
+        let div = document.createElement('div');
+        //let p_time = document.createElement('p');
+        let p_content = document.createElement('p');
+        switch (data.type) {
+            case 'serverInformation':
+                p_content.innerHTML = new Date().Format("hh:mm") + " " + data.message;
+                break;
+            case  'chat':
+                if (usern === data.name) {
+                    p_content.innerHTML = "<b>" + new Date().Format("hh:mm") + " " + data.name + ": " + data.message + "</b>";
+                } else {
+                    p_content.innerHTML = new Date().Format("hh:mm") + " " + data.name + ": " + data.message;
+                }
+
+                break;
+            default:
+                break;
+        }
+
+        p_content.setAttribute('style', 'color:' + getUserNameColor(data.name));
+
+        if (data.name === usern){
+            p_content.setAttribute('style', 'color:' + clr);
+        }
+
+        p_content.setAttribute('class', 'content');
+
+        div.appendChild(p_content);
+
+        return div;
+    };
+
+
+    const send = () => {
+        let message = document.getElementById('message');
+
+        if (message.value.length === 0) {
+            return;
+        }
+
+        if (message.value.substr(0, 10) === "/nickcolor") {
+            let msg = message.value.substr(11, message.value.length - 11);
+            if(msg.length === 6){
+                let regex = "^[A-Fa-f0-9]+$";
+                if(msg.match(regex)){
+                    clr = '#' + msg;
+                    let data = JSON.parse("{\"type\":\"serverInformation\",\"name\":\"" + usern + "\", \"message\": \"Change the color to " + clr +"\"}");
+                    let oldContent = document.getElementById('content');
+                    oldContent.appendChild(createChatDiv(data));
+                    oldContent.scrollTop = oldContent.scrollHeight;
+                }else {
+                    let data = JSON.parse("{\"type\":\"serverInformation\",\"name\":\"" + usern + "\", \"message\": \"Wrong color input\"}");
+                    let oldContent = document.getElementById('content');
+                    oldContent.appendChild(createChatDiv(data));
+                    oldContent.scrollTop = oldContent.scrollHeight;
+                }
+            }else {
+                let data = JSON.parse("{\"type\":\"serverInformation\",\"name\":\"" + usern + "\", \"message\": \"Wrong color input\"}");
+                let oldContent = document.getElementById('content');
+                oldContent.appendChild(createChatDiv(data));
+                oldContent.scrollTop = oldContent.scrollHeight;
+            }
+            message.value = "";
+        }else{
+
+            let data = {
+                type: 'chat',
+                message: message.value
+            };
+            ws.send(JSON.stringify(data));
+
+            message.value = "";
+        }
+
+
+    };
+
+    ws = new WebSocket('ws://127.0.0.1:3000');
+
+    //连接上来的时候
+    ws.onopen = () => {
+        let data = {
+            type: 'setName'
+            // nickname: nickName
+        };
+        ws.send(JSON.stringify(data))
+    };
+
+    //发送消息的时候
+    document.getElementById('sendMessage').onclick = () => {
+        send();
+    };
+
+
+    //当接受服务端的请求的时候
+    ws.onmessage = (e) => {
+        let data = JSON.parse(e.data);
+        console.log(data);
+
+        //接受的消息为连接的人的个数的时候
+        if (data.type === 'chatterList') {
+            let list = data.list;
+            let length = list.length;
+            let userList = document.getElementById('userList');
+
+            userList.innerHTML = '';
+
+            document.getElementById('onLine').innerText = `Online ${length} User(s)`;
+
+            for (let i = 0; i < list.length; i++) {
+                let p_user = document.createElement('p');
+                p_user.setAttribute('class', 'userList-item');
+                p_user.innerText = list[i].name;
+                userList.appendChild(p_user)
+            }
+        } else if (data.type === 'setName') {
+            let userName = document.getElementById('userName');
+            userName.innerHTML = data.message;
+            usern = data.message;
+            clr = getUserNameColor(usern);
+            document.cookie = "name=" + usern;
+        } else {
+            let oldContent = document.getElementById('content');
+            oldContent.appendChild(createChatDiv(data));
+            oldContent.scrollTop = oldContent.scrollHeight;
+        }
+
+    };
+
+    // }
+
+</script>
+</body>
+</html>
