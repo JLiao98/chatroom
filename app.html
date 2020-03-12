@@ -22,6 +22,7 @@
             <!-- <button id="setName">Set</button> -->
             <textarea placeholder="Type here..." id="message" name="message"></textarea>
             <button id="sendMessage">Send</button>
+            <button id="send200Msgs">Send 200 Msgs</button>
         </div>
 
     </div>
@@ -40,7 +41,7 @@
 
     let ws = null;
     let usern = '';
-    let clr = '';
+    let colors = [];
 
 
     Date.prototype.Format = function (fmt) {
@@ -60,29 +61,13 @@
         return fmt;
     };
 
-    function getUserNameColor(userName) {
-        const COLORS = [
-            '#e21400', '#91580f', '#f8a700', '#f78b00',
-            '#58dc00', '#287b00', '#a8f07a', '#4ae8c4',
-            '#3b88eb', '#3824aa', '#a700ff', '#d300e7'
-        ];
-        // Compute hash code
-        let hash = 7;
-        for (let i = 0; i < userName.length; i++) {
-            hash = userName.charCodeAt(i) + (hash << 5) - hash;
-        }
-        // Calculate color
-        const index = Math.abs(hash % COLORS.length);
-        return COLORS[index];
-    }
-
     const createChatDiv = (data) => {
         let div = document.createElement('div');
         //let p_time = document.createElement('p');
         let p_content = document.createElement('p');
         switch (data.type) {
             case 'serverInformation':
-                p_content.innerHTML = new Date().Format("hh:mm") + " " + data.message;
+                p_content.innerHTML = new Date().Format("hh:mm") + " ---------- " + data.message + " ----------";
                 break;
             case  'chat':
                 if (usern === data.name) {
@@ -96,10 +81,12 @@
                 break;
         }
 
-        p_content.setAttribute('style', 'color:' + getUserNameColor(data.name));
+        //p_content.setAttribute('style', 'color:' + getUserNameColor(data.name));
 
-        if (data.name === usern){
-            p_content.setAttribute('style', 'color:' + clr);
+        for (let i = 0; i < colors.length; i++) {
+            if (colors[i].name === data.name) {
+                p_content.setAttribute('style', 'color:' + colors[i].clr);
+            }
         }
 
         p_content.setAttribute('class', 'content');
@@ -119,28 +106,37 @@
 
         if (message.value.substr(0, 10) === "/nickcolor") {
             let msg = message.value.substr(11, message.value.length - 11);
-            if(msg.length === 6){
+            if (msg.length === 6) {
                 let regex = "^[A-Fa-f0-9]+$";
-                if(msg.match(regex)){
-                    clr = '#' + msg;
-                    let data = JSON.parse("{\"type\":\"serverInformation\",\"name\":\"" + usern + "\", \"message\": \"Change the color to " + clr +"\"}");
-                    let oldContent = document.getElementById('content');
-                    oldContent.appendChild(createChatDiv(data));
-                    oldContent.scrollTop = oldContent.scrollHeight;
-                }else {
+                if (msg.match(regex)) {
+                    let color = '#' + msg;
+
+                    document.cookie = JSON.stringify({
+                        name: usern,
+                        clr: color
+                    });
+
+                    let sdata = {
+                        type: '/nickcolor',
+                        clr: color
+                    };
+                    ws.send(JSON.stringify(sdata));
+
+                } else {
                     let data = JSON.parse("{\"type\":\"serverInformation\",\"name\":\"" + usern + "\", \"message\": \"Wrong color input\"}");
                     let oldContent = document.getElementById('content');
                     oldContent.appendChild(createChatDiv(data));
                     oldContent.scrollTop = oldContent.scrollHeight;
+
                 }
-            }else {
+            } else {
                 let data = JSON.parse("{\"type\":\"serverInformation\",\"name\":\"" + usern + "\", \"message\": \"Wrong color input\"}");
                 let oldContent = document.getElementById('content');
                 oldContent.appendChild(createChatDiv(data));
                 oldContent.scrollTop = oldContent.scrollHeight;
             }
             message.value = "";
-        }else{
+        } else {
 
             let data = {
                 type: 'chat',
@@ -156,18 +152,46 @@
 
     ws = new WebSocket('ws://127.0.0.1:3000');
 
-    //连接上来的时候
-    ws.onopen = () => {
-        let data = {
-            type: 'setName'
-            // nickname: nickName
-        };
-        ws.send(JSON.stringify(data))
-    };
+    if (document.cookie !== '') {
 
-    //发送消息的时候
+        let jdata = JSON.parse(document.cookie);
+
+        console.log(jdata.name,jdata.clr);
+
+
+        ws.onopen = () => {
+            let data = {
+                type: 'cookieName',
+                name: jdata.name,
+                clr: jdata.clr
+            };
+            ws.send(JSON.stringify(data))
+        };
+
+    } else {
+
+        ws.onopen = () => {
+            let data = {
+                type: 'setName'
+                // nickname: nickName
+            };
+            ws.send(JSON.stringify(data))
+        };
+
+    }
+
+
     document.getElementById('sendMessage').onclick = () => {
         send();
+    };
+
+    document.getElementById('send200Msgs').onclick = () => {
+        var i;
+        let message = document.getElementById('message');
+        for (i = 1; i < 201; i++) {
+            message.value = i;
+            send();
+        }
     };
 
 
@@ -184,20 +208,27 @@
 
             userList.innerHTML = '';
 
+            colors = [];
+
             document.getElementById('onLine').innerText = `Online ${length} User(s)`;
 
             for (let i = 0; i < list.length; i++) {
                 let p_user = document.createElement('p');
                 p_user.setAttribute('class', 'userList-item');
                 p_user.innerText = list[i].name;
-                userList.appendChild(p_user)
+                userList.appendChild(p_user);
+                colors.push({name: list[i].name, clr: list[i].clr});
+
             }
         } else if (data.type === 'setName') {
             let userName = document.getElementById('userName');
             userName.innerHTML = data.message;
             usern = data.message;
-            clr = getUserNameColor(usern);
-            document.cookie = "name=" + usern;
+            clr = data.clr;
+            document.cookie = JSON.stringify({
+                name: usern,
+                clr: clr
+            });
         } else {
             let oldContent = document.getElementById('content');
             oldContent.appendChild(createChatDiv(data));
